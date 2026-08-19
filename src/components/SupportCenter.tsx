@@ -21,6 +21,9 @@ interface SupportCenterProps {
   lang: Language;
 }
 
+// Formspree endpoint - real messages sent here reach your email inbox
+const FORMSPREE_ENDPOINT = 'https://formspree.io/f/mvkpdwdw';
+
 export const SupportCenter: React.FC<SupportCenterProps> = ({ lang }) => {
   const t = translations[lang];
   const [tickets, setTickets] = useState<SupportTicket[]>(INITIAL_TICKETS);
@@ -34,6 +37,9 @@ export const SupportCenter: React.FC<SupportCenterProps> = ({ lang }) => {
   const [category, setCategory] = useState<SupportTicket['category']>('speed');
   const [priority, setPriority] = useState<SupportTicket['priority']>('high');
   const [message, setMessage] = useState('');
+  const [senderEmail, setSenderEmail] = useState('');
+  const [sending, setSending] = useState(false);
+  const [sendError, setSendError] = useState<string | null>(null);
 
   const handleSendMessage = (e: React.FormEvent) => {
     e.preventDefault();
@@ -72,9 +78,39 @@ export const SupportCenter: React.FC<SupportCenterProps> = ({ lang }) => {
     }, 1000);
   };
 
-  const handleCreateTicket = (e: React.FormEvent) => {
+  const handleCreateTicket = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!subject.trim() || !message.trim()) return;
+
+    setSending(true);
+    setSendError(null);
+
+    // Send the real message to your email via Formspree
+    try {
+      const res = await fetch(FORMSPREE_ENDPOINT, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+        body: JSON.stringify({
+          subject: `[MediaCloud Support] ${subject}`,
+          category,
+          priority,
+          message,
+          email: senderEmail || 'not provided',
+        }),
+      });
+
+      if (!res.ok) {
+        throw new Error('Formspree request failed');
+      }
+    } catch (err) {
+      setSendError(
+        lang === 'ar'
+          ? 'حدث خطأ أثناء إرسال الرسالة. حاول مرة أخرى.'
+          : 'Something went wrong sending your message. Please try again.'
+      );
+      setSending(false);
+      return;
+    }
 
     const newTicket: SupportTicket = {
       id: 'TICK-' + Math.floor(1000 + Math.random() * 9000),
@@ -109,6 +145,8 @@ export const SupportCenter: React.FC<SupportCenterProps> = ({ lang }) => {
     setShowNewTicketModal(false);
     setSubject('');
     setMessage('');
+    setSenderEmail('');
+    setSending(false);
   };
 
   return (
@@ -287,6 +325,19 @@ export const SupportCenter: React.FC<SupportCenterProps> = ({ lang }) => {
 
             <form onSubmit={handleCreateTicket} className="space-y-4">
               <div>
+                <label className="text-xs font-bold text-slate-300">
+                  {lang === 'ar' ? 'بريدك الإلكتروني (للرد عليك)' : 'Your email (so we can reply)'}
+                </label>
+                <input
+                  type="email"
+                  value={senderEmail}
+                  onChange={(e) => setSenderEmail(e.target.value)}
+                  placeholder="you@example.com"
+                  className="w-full mt-1 px-3.5 py-2 text-xs rounded-xl bg-slate-800 border border-slate-700 text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+
+              <div>
                 <label className="text-xs font-bold text-slate-300">{t.support.ticketSubject}</label>
                 <input
                   type="text"
@@ -340,6 +391,13 @@ export const SupportCenter: React.FC<SupportCenterProps> = ({ lang }) => {
                 />
               </div>
 
+              {sendError && (
+                <div className="flex items-center gap-2 p-3 rounded-xl bg-red-950/40 border border-red-800/60 text-red-300 text-xs">
+                  <AlertCircle className="w-4 h-4 shrink-0" />
+                  <span>{sendError}</span>
+                </div>
+              )}
+
               <div className="flex justify-end gap-2 pt-2 border-t border-slate-800">
                 <button
                   type="button"
@@ -350,9 +408,12 @@ export const SupportCenter: React.FC<SupportCenterProps> = ({ lang }) => {
                 </button>
                 <button
                   type="submit"
-                  className="px-5 py-2 text-xs font-bold rounded-xl bg-blue-600 hover:bg-blue-500 text-white shadow-md cursor-pointer"
+                  disabled={sending}
+                  className="px-5 py-2 text-xs font-bold rounded-xl bg-blue-600 hover:bg-blue-500 text-white shadow-md cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
                 >
-                  {t.support.submitTicket}
+                  {sending
+                    ? (lang === 'ar' ? 'جارِ الإرسال...' : 'Sending...')
+                    : t.support.submitTicket}
                 </button>
               </div>
             </form>
