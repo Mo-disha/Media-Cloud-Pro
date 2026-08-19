@@ -1,0 +1,6 @@
+{
+  "name": "MediaCloud Pro - File Sharing & Cloud Storage",
+  "description": "منصة سحابية متقدمة لرفع ومشاركة وتنزيل الملفات بروابط سريعة ومباشرة، نظام تشفير قوي، إدارة مساحات التخزين، خطط اشتراكات ودعم متعدد اللغات.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
