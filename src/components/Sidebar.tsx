@@ -152,8 +152,94 @@ export const Sidebar: React.FC<SidebarProps> = ({
     },
   ];
 
+  const allNavItemsForMobile = [...navItems, ...adminNavItems];
+
   return (
-    <aside className="w-full md:w-64 lg:w-72 shrink-0 bg-slate-900/60 backdrop-blur-md border-b md:border-b-0 md:border-r rtl:md:border-r-0 rtl:md:border-l border-slate-800 p-3 sm:p-4 flex flex-col justify-between overflow-y-auto space-y-6">
+    <>
+      {/* Mobile: horizontal scrollable icon strip, sits above the file content */}
+      <nav className="md:hidden w-full bg-slate-900/60 backdrop-blur-md border-b border-slate-800 px-2 py-2">
+        <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar">
+          {allNavItemsForMobile.map((item) => {
+            const Icon = item.icon;
+            const isActive = activeTab === item.id;
+            return (
+              <button
+                key={item.id}
+                id={`nav-tab-mobile-${item.id}`}
+                onClick={() => onSelectTab(item.id)}
+                className={`flex flex-col items-center justify-center gap-1 px-3 py-2 rounded-xl shrink-0 min-w-[64px] transition-all cursor-pointer ${
+                  isActive
+                    ? 'bg-blue-600/20 text-blue-400 border border-blue-500/30'
+                    : 'text-slate-400 hover:text-white hover:bg-slate-800/80 border border-transparent'
+                }`}
+              >
+                <span className="relative">
+                  <Icon className={`w-5 h-5 ${isActive ? 'text-blue-400' : item.color}`} />
+                  {typeof item.count === 'number' && item.count > 0 && (
+                    <span className="absolute -top-1.5 -right-1.5 flex items-center justify-center min-w-[14px] h-[14px] px-0.5 text-[9px] font-black rounded-full bg-blue-500 text-white ring-2 ring-slate-900">
+                      {item.count}
+                    </span>
+                  )}
+                </span>
+                <span className="text-[10px] font-semibold whitespace-nowrap leading-none">
+                  {item.label}
+                </span>
+              </button>
+            );
+          })}
+
+          {/* Compact upgrade shortcut at the end of the strip */}
+          <button
+            onClick={onOpenPricing}
+            className="flex flex-col items-center justify-center gap-1 px-3 py-2 rounded-xl shrink-0 min-w-[64px] text-amber-400 hover:bg-slate-800/80 border border-transparent cursor-pointer"
+          >
+            <Zap className="w-5 h-5 fill-amber-400" />
+            <span className="text-[10px] font-semibold whitespace-nowrap leading-none">
+              {storageUsedPercent}%
+            </span>
+          </button>
+        </div>
+
+        {/* Category pills on mobile, only when relevant */}
+        {['my_files', 'recent', 'starred'].includes(activeTab) && (
+          <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar mt-2 pt-2 border-t border-slate-800/80">
+            {(['all', 'documents', 'images', 'videos', 'audio', 'archives', 'software'] as FileCategory[]).map((cat) => {
+              const isCatActive = activeCategory === cat;
+              return (
+                <button
+                  key={cat}
+                  onClick={() => onSelectCategory(cat)}
+                  className={`px-3 py-1.5 rounded-lg text-[11px] font-medium shrink-0 flex items-center gap-1 transition-all cursor-pointer ${
+                    isCatActive
+                      ? 'bg-slate-800 text-cyan-300 font-bold border border-cyan-500/40'
+                      : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/50 border border-transparent'
+                  }`}
+                >
+                  <span className="capitalize whitespace-nowrap">
+                    {lang === 'ar'
+                      ? cat === 'all' ? 'الكل'
+                        : cat === 'documents' ? 'مستندات'
+                        : cat === 'images' ? 'صور'
+                        : cat === 'videos' ? 'فيديوهات'
+                        : cat === 'audio' ? 'صوتيات'
+                        : cat === 'archives' ? 'مضغوطة'
+                        : 'برمجيات'
+                      : cat}
+                  </span>
+                  {categoryCounts[cat] > 0 && (
+                    <span className="text-[10px] opacity-70 font-mono">
+                      {categoryCounts[cat]}
+                    </span>
+                  )}
+                </button>
+              );
+            })}
+          </div>
+        )}
+      </nav>
+
+      {/* Desktop: full vertical sidebar (unchanged) */}
+      <aside className="hidden md:flex md:w-64 lg:w-72 shrink-0 bg-slate-900/60 backdrop-blur-md border-b md:border-b-0 md:border-r rtl:md:border-r-0 rtl:md:border-l border-slate-800 p-3 sm:p-4 flex-col justify-between overflow-y-auto space-y-6">
       <div className="space-y-5">
         {/* Primary Cloud Navigation */}
         <div>
@@ -325,6 +411,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
           <span className="font-mono text-emerald-400 font-bold">14ms</span>
         </div>
       </div>
-    </aside>
+      </aside>
+    </>
   );
 };
