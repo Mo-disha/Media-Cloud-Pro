@@ -17,6 +17,7 @@ import confetti from 'canvas-confetti';
 import { FileItem, FolderItem, Language } from '../types';
 import { translations } from '../translations';
 import { formatBytes, detectCategory, generateFileHash } from '../utils/storage';
+import { supabase, STORAGE_BUCKET } from '../utils/supabaseClient';
 
 interface UploadModalProps {
   lang: Language;
@@ -45,7 +46,7 @@ export const UploadModal: React.FC<UploadModalProps> = ({
   const [targetFolderId, setTargetFolderId] = useState<string | null>(currentFolderId);
   const [uploading, setUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
-  const [uploadSpeed, setUploadSpeed] = useState('64.2 MB/s');
+  const [uploadError, setUploadError] = useState<string | null>(null);
   const [uploadedItems, setUploadedItems] = useState<FileItem[]>([]);
   const [copiedIndex, setCopiedIndex] = useState<number | null>(null);
 
@@ -62,82 +63,100 @@ export const UploadModal: React.FC<UploadModalProps> = ({
 
     setUploading(true);
     setUploadProgress(0);
+    setUploadError(null);
 
-    // Realistic progress animation
-    const interval = setInterval(async () => {
-      setUploadProgress((prev) => {
-        if (prev >= 100) {
-          clearInterval(interval);
-          finishUpload();
-          return 100;
-        }
-        return prev + 12;
-      });
-    }, 180);
-  };
-
-  const finishUpload = async () => {
     const createdFiles: FileItem[] = [];
 
-    for (const file of selectedFiles) {
-      const { category, ext } = detectCategory(file.name.split('.').pop() || '', file.type);
-      const hash = await generateFileHash(file);
-      const randomCode = 'mc-' + Math.random().toString(36).substring(2, 7);
-      
-      // If it's an image or text file, create a preview dataUrl
-      let dataUrl: string | undefined = undefined;
-      if (file.type.startsWith('image/')) {
-        dataUrl = URL.createObjectURL(file);
+    try {
+      for (let i = 0; i < selectedFiles.length; i++) {
+        const file = selectedFiles[i];
+        const { category, ext } = detectCategory(file.name.split('.').pop() || '', file.type);
+        const hash = await generateFileHash(file);
+        const randomCode = 'mc-' + Math.random().toString(36).substring(2, 7);
+        const filePath = `${randomCode}/${file.name}`;
+
+        // Real upload to Supabase Storage
+        const { error: uploadErr } = await supabase.storage
+          .from(STORAGE_BUCKET)
+          .upload(filePath, file, {
+            cacheControl: '3600',
+            upsert: false,
+          });
+
+        if (uploadErr) {
+          throw new Error(uploadErr.message);
+        }
+
+        // Get the real public URL
+        const { data: publicUrlData } = supabase.storage
+          .from(STORAGE_BUCKET)
+          .getPublicUrl(filePath);
+
+        const realUrl = publicUrlData.publicUrl;
+
+        let dataUrl: string | undefined = undefined;
+        if (file.type.startsWith('image/')) {
+          dataUrl = realUrl;
+        }
+
+        const newFileItem: FileItem = {
+          id: 'file_' + Date.now() + '_' + Math.random().toString(36).substring(2, 6),
+          name: file.name,
+          size: file.size,
+          type: file.type || 'application/octet-stream',
+          extension: ext,
+          category,
+          uploadDate: new Date().toISOString().replace('T', ' ').substring(0, 16),
+          lastModified: new Date().toISOString().replace('T', ' ').substring(0, 16),
+          downloadsCount: 0,
+          viewsCount: 0,
+          isFavorite: false,
+          isTrash: false,
+          folderId: targetFolderId,
+          isPublic: true,
+          isEncrypted: enableEncryption,
+          encryptionAlgorithm: enableEncryption ? 'AES-256-GCM' : undefined,
+          password: password.trim() ? password.trim() : undefined,
+          expiresAt: expiryOption === 'none' ? null : expiryOption,
+          shareCode: randomCode,
+          directDownloadUrl: realUrl,
+          sha256Hash: hash,
+          virusScanStatus: 'clean',
+          virusScanEnginesPassed: 72,
+          dataUrl,
+          blobData: file,
+          tags: [ext, 'cloud', category],
+          uploader: {
+            name: 'Ammar Yaser',
+            avatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80',
+            isPro: true
+          }
+        };
+
+        createdFiles.push(newFileItem);
+        setUploadProgress(Math.round(((i + 1) / selectedFiles.length) * 100));
       }
 
-      const newFileItem: FileItem = {
-        id: 'file_' + Date.now() + '_' + Math.random().toString(36).substring(2, 6),
-        name: file.name,
-        size: file.size,
-        type: file.type || 'application/octet-stream',
-        extension: ext,
-        category,
-        uploadDate: new Date().toISOString().replace('T', ' ').substring(0, 16),
-        lastModified: new Date().toISOString().replace('T', ' ').substring(0, 16),
-        downloadsCount: 0,
-        viewsCount: 0,
-        isFavorite: false,
-        isTrash: false,
-        folderId: targetFolderId,
-        isPublic: true,
-        isEncrypted: enableEncryption,
-        encryptionAlgorithm: enableEncryption ? 'AES-256-GCM' : undefined,
-        password: password.trim() ? password.trim() : undefined,
-        expiresAt: expiryOption === 'none' ? null : expiryOption,
-        shareCode: randomCode,
-        directDownloadUrl: `https://download.mediacloud.net/direct/${randomCode}/${encodeURIComponent(file.name)}`,
-        sha256Hash: hash,
-        virusScanStatus: 'clean',
-        virusScanEnginesPassed: 72,
-        dataUrl,
-        blobData: file,
-        tags: [ext, 'cloud', category],
-        uploader: {
-          name: 'Ammar Yaser',
-          avatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80',
-          isPro: true
-        }
-      };
+      setUploadedItems(createdFiles);
+      onUploadSuccess(createdFiles);
 
-      createdFiles.push(newFileItem);
+      try {
+        confetti({
+          particleCount: 100,
+          spread: 80,
+          origin: { y: 0.6 }
+        });
+      } catch (e) {}
+    } catch (err: any) {
+      console.error('Upload failed:', err);
+      setUploadError(
+        lang === 'ar'
+          ? 'فشل رفع الملف. تأكد من إعدادات التخزين (bucket) في Supabase.'
+          : 'Upload failed. Check your Supabase storage bucket settings.'
+      );
+    } finally {
+      setUploading(false);
     }
-
-    setUploadedItems(createdFiles);
-    setUploading(false);
-    onUploadSuccess(createdFiles);
-
-    try {
-      confetti({
-        particleCount: 100,
-        spread: 80,
-        origin: { y: 0.6 }
-      });
-    } catch (e) {}
   };
 
   const copyLink = (url: string, index: number) => {
@@ -151,6 +170,7 @@ export const UploadModal: React.FC<UploadModalProps> = ({
     setUploadedItems([]);
     setUploadProgress(0);
     setUploading(false);
+    setUploadError(null);
     setPassword('');
     onClose();
   };
@@ -166,7 +186,7 @@ export const UploadModal: React.FC<UploadModalProps> = ({
             </div>
             <div>
               <h3 className="text-base font-bold text-white">{t.uploadModal.title}</h3>
-              <p className="text-xs text-slate-400">Multi-threaded chunked transfer with AES-256</p>
+              <p className="text-xs text-slate-400">Real cloud storage via Supabase</p>
             </div>
           </div>
 
@@ -181,7 +201,7 @@ export const UploadModal: React.FC<UploadModalProps> = ({
         {/* Modal Body */}
         <div className="p-6 space-y-5 max-h-[80vh] overflow-y-auto">
           {uploadedItems.length > 0 ? (
-            /* SUCCESS STATE WITH DIRECT LINKS */
+            /* SUCCESS STATE WITH REAL LINKS */
             <div className="space-y-4 text-center">
               <div className="w-16 h-16 rounded-3xl bg-emerald-500/20 border border-emerald-500/30 text-emerald-400 mx-auto flex items-center justify-center">
                 <Check className="w-8 h-8 stroke-[3]" />
@@ -189,8 +209,8 @@ export const UploadModal: React.FC<UploadModalProps> = ({
               <h4 className="text-lg font-black text-white">{t.uploadModal.complete}</h4>
               <p className="text-xs text-slate-400">
                 {lang === 'ar' 
-                  ? 'تم تشفير ملفاتك وتوليد روابط تحميل مباشرة فائقة السرعة.'
-                  : 'Files securely encrypted and assigned ultra-fast direct CDN download endpoints.'}
+                  ? 'تم رفع ملفاتك فعلياً وتوليد روابط تحميل مباشرة شغالة.'
+                  : 'Files uploaded to real storage with working direct download links.'}
               </p>
 
               <div className="space-y-2 mt-4 text-start">
@@ -333,13 +353,21 @@ export const UploadModal: React.FC<UploadModalProps> = ({
                 </div>
               </div>
 
+              {/* Upload Error Message */}
+              {uploadError && (
+                <div className="flex items-center gap-2 p-3 rounded-xl bg-red-950/40 border border-red-800/60 text-red-300 text-xs">
+                  <AlertCircle className="w-4 h-4 shrink-0" />
+                  <span>{uploadError}</span>
+                </div>
+              )}
+
               {/* Upload Progress Bar if active */}
               {uploading && (
                 <div className="space-y-2 p-3.5 rounded-2xl bg-blue-950/40 border border-blue-800/60 animate-in fade-in">
                   <div className="flex justify-between text-xs font-mono text-cyan-300">
                     <span className="flex items-center gap-1">
                       <Zap className="w-3.5 h-3.5 text-cyan-400 animate-pulse" />
-                      Speed: {uploadSpeed}
+                      {lang === 'ar' ? 'جارِ الرفع...' : 'Uploading...'}
                     </span>
                     <span className="font-bold">{uploadProgress}%</span>
                   </div>
